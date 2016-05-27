@@ -39,8 +39,7 @@ int main() {
     int child_count = 0;
     struct list_node *root = NULL;
     struct list_node **root_ptr = &root;
-    pid_t pid_server, pid_client;
-    pid_server = getpid();
+    pid_t pid_client;
 
     if (msq_id == -1) {
         perror("msgget");
@@ -48,7 +47,7 @@ int main() {
     }
 
     while (1) {
-        struct msg_message rec_message, send_message;
+        struct msg_message rec_message;
         struct thread_information *thread_info;
         pthread_t thread_id;
         int rc;
