@@ -15,6 +15,8 @@ int main() {
     struct msg_message send_message, rec_message;
     pid_t pid, fork_pid;
     int i;
+    long thread_id;
+
     fork_pid = 0;
     for (i = 0; (i < 5) && !fork_pid; i++) {
         fork_pid = fork();
@@ -26,18 +28,23 @@ int main() {
         perror("msgget");
         exit(EXIT_FAILURE);
     }
-
+    send_message.mtyp = 1;
+    sprintf(send_message.text, "%ld\n", pid);
+    msgsnd(msq_id, &send_message, MSG_SIZE, 0);
     for (i = 0; i < 5; i++) {
-        send_message.mtyp = 1;
-        sprintf(send_message.text, "%d\n", pid);
-        msgsnd(msq_id, &send_message, MSG_SIZE, 0);
         rec_message.mtyp = pid;
         msgrcv(msq_id, &rec_message, MSG_SIZE, pid, 0);
-        printf("Server answered: %s\n", rec_message.text);
+        printf("Client %d Server answered: %s\n", pid, rec_message.text);
+        sscanf(rec_message.text, "%ld", &thread_id);
+        send_message.mtyp = thread_id;
+        sprintf(send_message.text, "%ld\n", pid);
+        msgsnd(msq_id, &send_message, MSG_SIZE, 0);
     }
-
-    send_message.mtyp = 1;
-    sprintf(send_message.text, "%d\n", -1);
+    rec_message.mtyp = pid;
+    msgrcv(msq_id, &rec_message, MSG_SIZE, pid, 0);
+    printf("Last answer: %s\n", rec_message.text);
+    send_message.mtyp = thread_id;
+    sprintf(send_message.text, "%ld\n", -1);
     msgsnd(msq_id, &send_message, MSG_SIZE, 0);
 
     return 0;

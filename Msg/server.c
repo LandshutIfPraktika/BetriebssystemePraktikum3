@@ -19,24 +19,49 @@ struct thread_information {
     int msq_id;
 };
 
+volatile int thread_count = 0;
+pthread_mutex_t running_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 void *answer_challenge(void *information) {
 
     struct thread_information *thread_info = (struct thread_information *) information;
     pid_t pid_client = thread_info->pid_client;
     int msq_id = thread_info->msq_id;
-    pthread_t thread_id = pthread_self();
+    long thread_id = pthread_self();
     struct msg_message send_message;
+    //safety
     send_message.mtyp = pid_client;
-    sprintf(send_message.text, "%d\n", thread_id);
+    sprintf(send_message.text, "%ld\n", thread_id);
     msgsnd(msq_id, &send_message, MSG_SIZE, 0);
+    printf("Thread %ld sent message to %ld\n", thread_id, pid_client);
+
+    while (1) {
+        struct msg_message rec_message;
+        rec_message.mtyp = thread_id;
+        msgrcv(msq_id, &rec_message, MSG_SIZE, thread_id, 0);
+        sscanf(rec_message.text, "%d", &pid_client);
+        if (pid_client == -1) {
+            break;
+        }
+
+        printf("Thread %ld got answer from %ld\n", thread_id, pid_client);
+        send_message.mtyp = pid_client;
+        sprintf(send_message.text, "%ld\n", thread_id);
+        msgsnd(msq_id, &send_message, MSG_SIZE, 0);
+        printf("Thread %ld sent message to %ld\n", thread_id, pid_client);
+    }
     free(information);
+    pthread_mutex_lock(&running_mutex);
+    thread_count--;
+    pthread_mutex_unlock(&running_mutex);
+    printf("Thread %ld done\n", thread_id);
     pthread_exit(NULL);
 }
 
+
 int main() {
-    int msq_id = msgget(MQ_KEY, IPC_PRIVATE | IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+    int msq_id = msgget(MQ_KEY, IPC_PRIVATE | IPC_CREAT | S_IRUSR | S_IWUSR);
     struct msqid_ds msqid_ds;
-    int child_count = 0;
     struct list_node *root = NULL;
     struct list_node **root_ptr = &root;
     pid_t pid_client;
@@ -47,39 +72,40 @@ int main() {
     }
 
     while (1) {
-        struct msg_message rec_message;
-        struct thread_information *thread_info;
-        pthread_t thread_id;
-        int rc;
 
+        struct msg_message rec_message;
+        printf("Child count%d\n", thread_count);
 
         rec_message.mtyp = 1;
         msgrcv(msq_id, &rec_message, MSG_SIZE, 1, 0);
-        sscanf(rec_message.text, "%d", &pid_client);
+        sscanf(rec_message.text, "%ld", &pid_client);
 
-        if (pid_client == -1) {
-            child_count--;
-        } else if (msg_linked_set_add(root_ptr, pid_client)) {
-            child_count++;
-            printf("New Client: %d\n", pid_client);
-        }
-        if (!child_count) {
-            break;
-        }
-        thread_info = malloc(sizeof(struct thread_information));
-        if (thread_info == NULL) {
-            perror("malloc thread info");
-            break;
-        }
-        memset(thread_info, '\0', sizeof(struct thread_information));
+        if (msg_linked_set_add(root_ptr, pid_client)) {
+            struct thread_information *thread_info;
+            pthread_t thread_id;
+            int rc;
 
-        thread_info->msq_id = msq_id;
-        thread_info->pid_client = pid_client;
+            pthread_mutex_lock(&running_mutex);
+            thread_count++;
+            pthread_mutex_unlock(&running_mutex);
 
-        rc = pthread_create(&thread_id, NULL, answer_challenge, (void *) thread_info);
-        if (rc) {
-            perror("pthread create");
-            break;
+            printf("New Client: %ld\n", pid_client);
+
+            thread_info = malloc(sizeof(struct thread_information));
+            if (thread_info == NULL) {
+                perror("malloc thread info");
+                break;
+            }
+            memset(thread_info, '\0', sizeof(struct thread_information));
+
+            thread_info->msq_id = msq_id;
+            thread_info->pid_client = pid_client;
+
+            rc = pthread_create(&thread_id, NULL, answer_challenge, (void *) thread_info);
+            if (rc) {
+                perror("pthread create");
+                break;
+            }
         }
 
     }

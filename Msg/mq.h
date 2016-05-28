@@ -10,7 +10,7 @@
 
 /* Wählen Sie eine etwas „kryptische“ Zahl */
 /* Maximale Länge der Nachricht */
-#define MSG_SIZE 20
+#define MSG_SIZE 50
 /* Struktur einer Message */
 
 struct msg_message{
